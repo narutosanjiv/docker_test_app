@@ -1,13 +1,51 @@
 version: '2'
+
 services:
-  db:
-    image: mongo:3.2
-  web:
-    build: .
-    command: bundle exec rails s -p 3000 -b '0.0.0.0'
-    volumes:
-      - .:/testapp
+  mongo:
+    image: 'mongo:3.2'
+  redis.local:
+    image: 'redis:3.2-alpine'
+    command: redis-server
     ports:
-      - "3000:3000"
+      - '6379'
+    volumes:
+      - 'redis:/var/lib/redis/data'
+
+  app:
     depends_on:
-      - db
+      - 'mongo'
+      - 'redis.local'
+    build: .
+    command: bundle exec unicorn -c config/containers/unicorn.rb -E production
+    ports:
+      - "3000:3001" 
+    env_file:
+      - '.env'
+  # service configuration for our web server
+  web:
+  
+    # set the build context to the root of the Rails app
+    image: nginx:localdev
+    build:
+      context: .
+      # build with a different Dockerfile
+      dockerfile: config/containers/Dockerfile-nginx
+    
+    # makes the web container aware of the app container
+    links:
+      - app
+    # expose the port we configured Nginx to bind to
+    ports:
+      - "8080:80"
+  sidekiq:
+    depends_on:
+      - 'mongo'
+      - 'redis.local'
+    build: .
+    command: bundle exec sidekiq -d -L log/sidekiq.log
+    env_file:
+      - '.env'
+
+volumes:
+  redis:
+  mongo:
